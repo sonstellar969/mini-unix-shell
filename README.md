@@ -2,7 +2,6 @@
 
 `msh` is a small UNIX shell in POSIX C. It reads a line from standard input and runs it. Built-in commands that must change the shell itself run inside the shell process. Every other command is a child created with `fork` and `execvp`. Pipelines are children joined by anonymous pipes. The shell never calls `system()` and never hands the line to another shell.
 
-Repository: https://github.com/sonstellar969/mini-unix-shell
 
 ## Features
 
