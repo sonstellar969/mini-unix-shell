@@ -1,0 +1,5 @@
+msh
+tests/measure_pipe
+src/*.o
+*.dSYM
+.DS_Store

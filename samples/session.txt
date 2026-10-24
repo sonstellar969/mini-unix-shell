@@ -1,0 +1,92 @@
+# Sample session
+
+Input is what the user types. The working directory in this transcript is written as
+/home/user/mini-unix-shell. Standard error is marked with # stderr.
+
+help
+echo hello world
+echo "quoted args"
+cd /tmp
+pwd
+cd -
+pwd
+echo one > /tmp/msh-sample.txt
+echo two >> /tmp/msh-sample.txt
+cat < /tmp/msh-sample.txt
+printf 'c\nb\na\n' | sort | wc -l
+false
+echo $?
+no_such_cmd
+echo $?
+ls |
+echo $?
+
+Observed output:
+
+msh, a minimal UNIX shell
+
+Builtins: cd, pwd, exit, help, history, jobs, wait
+External commands run with fork and execvp.
+Pipelines: cmd1 | cmd2 | cmd3
+Redirection: < file, > file, >> file
+Background: command &
+Status of the previous command: $?
+Home shortcut: ~ and ~/
+Ctrl+C stops the foreground command and returns to msh.
+hello world
+quoted args
+/private/tmp
+/home/user/mini-unix-shell
+/home/user/mini-unix-shell
+one
+two
+       3
+1
+127
+2
+
+# stderr
+msh: no_such_cmd: command not found
+msh: syntax error: missing command
+
+Notes:
+- `cd /tmp` then `pwd` prints the physical directory. On the test machine that is /private/tmp.
+- `cd -` prints the directory it returns to.
+- `wc` pads its count. The shell does not add those spaces.
+- `false` is an external command. `$?` is 1.
+- An unknown command exits 127. The next command still runs.
+- `ls |` is a syntax error. The shell sets status 2 and stays up.
+
+Background input:
+
+sleep 1 &
+jobs
+wait
+echo waited
+
+Observed:
+
+# stderr
+[1] 9426
+
+# stdout
+[1] running pgid=9426 sleep 1 &
+waited
+
+The process id is chosen by the kernel and changes every run. `wait` returns when the sleep exits. The shell's own status after a successful `wait` is the job's status (0 here).
+
+Invalid and boundary cases covered by tests/test_shell.py:
+
+- empty line and a comment line
+- cd with no HOME, cd to a missing path, cd to a file, cd with two paths
+- cd inside a pipeline, which must not change the shell
+- duplicate output redirection
+- redirection with no target
+- unclosed quote
+- '&' not at the end of the line
+- a command that is only `> outfile`
+- empty input file
+- missing input file
+- `exit` with a non-numeric argument, which must not quit
+- `$?` inside quotes, which must stay the two characters $?
+- a pipeline of 31 stages, which checks that pipe descriptors are closed
