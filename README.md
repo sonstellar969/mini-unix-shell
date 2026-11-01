@@ -1,6 +1,8 @@
 # msh
 
-`msh` is a small UNIX shell in POSIX C. It reads a line from standard input and runs it. Built-in commands that must change the shell itself run inside the shell process. Every other command is a child created with `fork` and `execvp`. Pipelines are children joined by anonymous pipes. The shell never calls `system()` and never hands the line to another shell.
+`msh` is a Mini UNIX Shell written in C. It is a command-line interpreter: a typed command runs as a new process created with `fork` and `execvp`. Built-in commands that must change the shell itself (`cd`, `exit`) run in the shell process. Pipelines, redirection, background jobs, and Ctrl+C handling are built on the same process and file-descriptor calls. The shell never calls `system()` and never hands the line to another shell.
+
+The demonstration environment named for this topic is Linux. The operating-systems laboratory machines run Fedora. The sources are POSIX C11, so `make`, `make test`, and `make bench` are the same commands on Fedora and on the machine used to develop the code.
 
 
 ## Features
@@ -16,14 +18,17 @@
 
 ## Build and run
 
-Requirements are a C11 compiler (`cc`, clang, or gcc), Make, and Python 3 for the tests. There are no third-party libraries.
+Requirements are a C11 compiler (`gcc` or `clang`), Make, and Python 3 for the tests. On Fedora, `gcc`, `make`, and `python3` are enough. There are no third-party libraries.
 
 ```sh
 make
 ./msh
 make test
 make bench
+make pack
 ```
+
+`make pack` writes `OS_MiniProject_MiniUNIXShell.zip` containing the sources, tests, samples, README, and report, and omitting `.git` and build products. Rename that archive to `OS_MiniProject_TeamXX_MiniUNIXShell.zip`, and rename the PDF to `OS_MiniProject_TeamXX_Report.pdf`, once the team number is known.
 
 `make test` runs 36 functional tests and one terminal test that sends Ctrl+C. `make bench` reprints the timing measurements.
 
@@ -73,6 +78,10 @@ tests/           functional tests, Ctrl+C test, benchmarks
 ## Sample cases
 
 Normal, boundary, and invalid inputs are in `samples/session.txt`. The test file `tests/test_shell.py` is the executable version of those cases.
+
+## Report
+
+`REPORT.md` is the report text. The formatted copies are `report/OS_MiniProject_Report.docx` and `report/OS_MiniProject_Report.pdf`. Fill the institution name, student names, and roll numbers on the cover before the hard-copy submission. The report follows the prescribed order: cover, abstract, contents, introduction, problem statement and objectives, literature, requirements and tools, design, implementation, testing and results, discussion, conclusion and future scope, references, appendix.
 
 ## Original work
 

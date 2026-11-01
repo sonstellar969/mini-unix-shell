@@ -6,6 +6,8 @@ Copy the fields below into the topic form. Fill the team member list on the form
 
 msh: A Minimal UNIX Shell
 
+Official topic 21: a command-line interpreter that supports commands and process creation with fork() and exec() on Linux, in C.
+
 ## Problem statement
 
 The shell is the program that turns a typed line into processes, pipes, and files. Reading about `fork`, `exec`, pipes, and signals leaves those steps abstract. This project builds `msh`, a small POSIX shell that does the steps itself. It must run external programs, keep builtins that change the shell (`cd`, `exit`) inside the shell process, connect commands with pipes, redirect input and output, start background commands, and stay alive when Ctrl+C stops the foreground command. A slide deck is not the deliverable. The deliverable is a working command-line program, with tests that include invalid input, and with a measurement of what process creation costs.

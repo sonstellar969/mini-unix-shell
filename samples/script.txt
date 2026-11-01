@@ -1,0 +1,10 @@
+echo hello
+echo "quoted args"
+pwd
+printf 'c\nb\na\n' | sort
+false
+echo $?
+no_such_msh_cmd
+echo $?
+ls |
+echo $?

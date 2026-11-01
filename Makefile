@@ -4,7 +4,7 @@ CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -D_POSIX_C_SOURCE=200809L
 SRC := src/main.c src/parser.c src/execute.c src/builtin.c src/jobs.c
 OBJ := $(SRC:.c=.o)
 
-.PHONY: all test bench clean
+.PHONY: all test bench pack clean
 
 all: msh
 
@@ -24,5 +24,11 @@ bench: msh tests/measure_pipe
 tests/measure_pipe: tests/measure_pipe.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+pack:
+	rm -f OS_MiniProject_MiniUNIXShell.zip
+	zip -r OS_MiniProject_MiniUNIXShell.zip \
+		Makefile README.md REPORT.md SUBMISSION.md samples src tests report \
+		-x 'src/*.o' 'msh' 'tests/measure_pipe' '*/.DS_Store'
+
 clean:
-	rm -f $(OBJ) msh tests/measure_pipe
+	rm -f $(OBJ) msh tests/measure_pipe OS_MiniProject_MiniUNIXShell.zip

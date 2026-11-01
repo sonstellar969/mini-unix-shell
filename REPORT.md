@@ -1,24 +1,34 @@
-Formatting note, delete before printing. Set the document to A4, Times New Roman, body 12 pt, chapter headings 14 pt bold, 1.5 line spacing, justified text, margins of about 1 inch, and numbered pages. Put figures and tables in the chapters where they are named. Replace every field in square brackets on the cover. The abstract below is the abstract to print. This note is not part of the report.
-
 Cover page
 
 [Institution name]
-[Department]
+
+Department of Computer Science and Engineering
 
 Operating Systems Mini Project
 
 msh: A Minimal UNIX Shell
 
+Course: Operating Systems (T7998), Credit 4
+
+Year / Semester: 2026 / III
+
+Batch: 2025–29
+
+Faculty guide: Dr. Bibhuprasad Sahu
+
+Academic year: 2026–27
+
 Submitted by
 
 [Member 1 name]    [PRN / roll number]
+
 [Member 2 name]    [PRN / roll number]
+
 [Member 3 name]    [PRN / roll number]
+
 [Member 4 name]    [PRN / roll number]
 
-Course: [course title and code]
-Instructor: [instructor name]
-Date: 2 November 2026
+Delete unused member lines. Fill the institution name and the PRNs before printing.
 
 Abstract
 
@@ -81,6 +91,29 @@ msh implements the process and file-descriptor core of a shell. It does not impl
 2.4 Expected outcome
 
 The outcome is a working binary, a test suite that fails if a behavior regresses, a sample session, and the measurements in Section 7. A person who can type at a prompt should be able to run a command, a pipeline, a redirection, a background job, and an interrupt, and should be able to say which system call did the work.
+
+2.5 Alignment with the prescribed topic
+
+The course topic list, item 21, asks for a Mini UNIX Shell: a command-line interpreter that supports commands and process creation with fork() and exec() on Linux, written in C. msh is that program. External commands are children. The child calls execvp, which is the PATH-searching member of the exec family, so a typed name such as ls becomes a new program image. The parent waits with waitpid. Builtins that must change the shell, cd and exit, stay in the parent, because a child cannot change its parent's directory or end the shell by exiting.
+
+The same topic row does not require pipes, redirection, or background jobs. Those are included because the submission guidelines ask for a working command-line interface, invalid-input tests, and a measured result, and because a shell that can only run one command with no status and no Ctrl+C behavior cannot be demonstrated properly. Each extra feature uses the same process and file-descriptor model. None of it is delegated to another shell.
+
+The prescribed syllabus places this work in process management and in the UNIX introduction: process creation, process state, and the services the operating system provides to a user program. The shell is the user program that calls those services. The assessment plan lists the mini-project under CO5, with a maximum of 5 marks, and a tentative date of 24 October 2026. The submission guidelines say to follow the deadline the instructor announces. The topic form for this class set topic submission at 25 October 2026, 00:00, and final submission at 2 November 2026, 16:00.
+
+The guidelines also give a suggested 100-point rubric. The instructor may scale it to the 5-mark component.
+
+Table. Suggested rubric from the submission guidelines
+
+Criterion                                              Marks
+Problem understanding and relevance to OS              10
+Design, algorithm, and technical correctness           20
+Implementation and working functionality               25
+Testing, results, and analysis                         15
+Report quality, structure, and references              15
+Demonstration, viva, and individual contribution       15
+Total                                                  100
+
+The demonstration the guidelines suggest is 8–10 minutes, then 3–5 minutes of questions. The order is the problem, the OS concept, the design, a live run, the test results, and the limitations. A backup recording of the same commands is in samples/session.txt if the lab machine cannot compile during the viva. The live binary is still the submission.
 
 3. Literature and existing systems
 
@@ -155,14 +188,15 @@ The user is a person at a terminal, or a test harness that writes a script to th
 Table 2. Tools
 
 Tool            Role
-C11             implementation language
-POSIX C library fork, exec, pipe, signals, directory calls
-cc              Apple clang 21.0.0 on the measurement machine; gcc is equally valid
-Make            build, test, and benchmark targets
+C11             implementation language, as specified for topic 21
+POSIX C library fork, execvp, pipe, dup2, waitpid, setpgid, tcsetpgrp, signals
+Linux           demonstration operating system named by the topic list; the OS laboratory uses Fedora
+cc              gcc on Fedora, or clang; the measurement binary was built with Apple clang 21.0.0
+Make            build, test, benchmark, and pack targets
 Python 3        functional tests, the Ctrl+C test, and the benchmark driver
 POSIX terminal  manual use and the pseudoterminal used by the Ctrl+C test
 
-The measurement machine reported Darwin 27.0.0 on arm64. The pipe-capacity probe and the timings in Section 7 were collected there. Functional tests were run on the same machine against the binary produced by make.
+The measurement machine reported Darwin 27.0.0 on arm64. The pipe-capacity probe and the timings in Section 7 were collected there. Functional tests were run on the same machine against the binary produced by make. The sources use POSIX calls only, so the same Makefile is the build on Fedora. Re-run make bench on the demonstration machine and replace Table 6 if the viva is marked from that machine. Do not present the Darwin numbers as Fedora numbers.
 
 4.5 Deliverables
 
@@ -339,7 +373,11 @@ The interrupt test is separate because it needs a terminal. Python's pty.fork gi
 
 7.2 Functional results
 
-All 36 functional tests passed, and the interrupt test passed, on the measurement machine after a clean build. Table 5 groups them by the requirement they lock down.
+All 36 functional tests passed, and the interrupt test passed, on the measurement machine after a clean build. Table 5 groups them by the requirement they lock down. Figure 3 is a session captured from the terminal: echo, a two-stage pipeline through sort, and $?. The prompt returns after each command. The same commands are in samples/script.txt for a non-interactive run.
+
+Figure 3. Captured msh session
+
+![Captured msh session](report/figures/session.png)
 
 Table 5. Functional coverage
 
@@ -448,6 +486,10 @@ References
 [8] R. H. Arpaci-Dusseau and A. C. Arpaci-Dusseau, Operating Systems: Three Easy Pieces. Madison, WI, USA: Arpaci-Dusseau Books, 2018. [Online]. Available: https://pages.cs.wisc.edu/~remzi/OSTEP/
 
 [9] IEEE and The Open Group, The Open Group Base Specifications Issue 7 (IEEE Std 1003.1-2017), 2018. [Online]. Available: https://pubs.opengroup.org/onlinepubs/9699919799/
+
+[10] M. J. Bach, The Design of the UNIX Operating System. Englewood Cliffs, NJ, USA: Prentice Hall, 1986.
+
+The course syllabus for Operating Systems (T7998) prescribes Silberschatz, Galvin, and Gagne, 9th edition; Stallings, 8th edition; Tanenbaum and Bos, 4th edition; Godbole, 2nd edition; and Bach [10]. References [6] and [7] are the later or matching editions of two of those books. Reference [6] is the 10th edition of the Silberschatz text, used because that is the edition consulted while writing this report. The 9th edition is the prescribed one.
 
 Appendix A. Sample session
 

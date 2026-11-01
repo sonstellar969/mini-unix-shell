@@ -3,3 +3,4 @@ tests/measure_pipe
 src/*.o
 *.dSYM
 .DS_Store
+OS_MiniProject_MiniUNIXShell.zip
