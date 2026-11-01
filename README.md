@@ -80,10 +80,6 @@ tests/           functional tests, Ctrl+C test, benchmarks
 
 Normal, boundary, and invalid inputs are in `samples/session.txt`. The test file `tests/test_shell.py` is the executable version of those cases.
 
-## Report
-
-`REPORT.md` is the report text. The formatted copies are `report/OS_MiniProject_Report.docx` and `report/OS_MiniProject_Report.pdf`. Fill the institution name, student names, and roll numbers on the cover before the hard-copy submission. The report follows the prescribed order: cover, abstract, contents, introduction, problem statement and objectives, literature, requirements and tools, design, implementation, testing and results, discussion, conclusion and future scope, references, appendix.
-
 ## Original work
 
 The C sources, tests, and this README were written for this shell. System calls come from the C library and follow POSIX. Algorithm references are listed in `REPORT.md`.
