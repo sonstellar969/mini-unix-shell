@@ -84,6 +84,13 @@ Normal, boundary, and invalid inputs are in `samples/session.txt`. The test file
 
 The C sources, tests, and this README were written for this shell. System calls come from the C library and follow POSIX. Algorithm references are listed in `REPORT.md`.
 
+## Our Team
+
+- Lakshman Reddy (25070721038)
+- Chandra Shekhar (25070721055)
+- Aditya Praveen (25070721057)
+- Shashi Kiran Reddy (25070721045)
+
 ## License
 
 The source is released under the MIT license. See `LICENSE`.
