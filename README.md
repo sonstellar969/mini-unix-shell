@@ -1,6 +1,6 @@
 # msh
 
-`msh` is a small UNIX shell written in C. A shell reads a line you type and asks the operating system to run it. An external command becomes a new process with `fork` and `execvp`. The shell waits for that process with `waitpid`. `cd` and `exit` run in the shell process, because a child cannot change the shell's directory or end the shell. Pipes and redirection use `pipe`, `open`, and `dup2`. The shell never calls `system()` and never hands the line to another shell.
+`msh` is a small UNIX shell written in C. A shell reads a line you type and asks the operating system to run it. An external command becomes a new process with `fork` and `execvp`. The shell waits for that process with `waitpid`. `cd` and `exit` run in the shell process, because a child cannot change the shell's directory or end the shell. Pipes and redirection use `pipe`, `open`, and `dup2`. The shell never calls `system()` and never hands the line to another shell. 
 
 The demonstration environment for this topic is Linux. The sources are POSIX C11, so `make` and `make test` are the same commands on Linux and on the machine used to develop the code.
 
