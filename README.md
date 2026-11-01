@@ -77,10 +77,10 @@ The C sources, tests, and this README were written for this shell. System calls 
 
 ## Our Team
 
-- Lakshman Reddy (25070721038)
-- Chandra Shekhar (25070721055)
-- Aditya Praveen (25070721057)
-- Shashi Kiran Reddy (25070721045)
+- Narala Lakshman Reddy (25070721038)
+- Chandra Shekhar Thati (25070721055)
+- Aditya Praveen Sampara (25070721057)
+- Pulegari Shashi Kiran Reddy (25070721045)
 
 ## License
 
