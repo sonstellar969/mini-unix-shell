@@ -70,9 +70,6 @@ This shell demonstrates process creation, pipes, and files. It does not implemen
 
 Normal, boundary, and invalid inputs are in `samples/session.txt`. `tests/test_shell.py` is the executable version of those cases.
 
-## Report
-
-`REPORT.md` is the report text. The formatted copies are `report/OS_MiniProject_Report.docx` and `report/OS_MiniProject_Report.pdf`. Fill the institution name, student names, and roll numbers on the cover before printing.
 
 ## Original work
 
