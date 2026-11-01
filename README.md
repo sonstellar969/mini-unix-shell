@@ -1,25 +1,21 @@
 # msh
 
-`msh` is a Mini UNIX Shell written in C. It is a command-line interpreter: a typed command runs as a new process created with `fork` and `execvp`. Built-in commands that must change the shell itself (`cd`, `exit`) run in the shell process. Pipelines, redirection, background jobs, and Ctrl+C handling are built on the same process and file-descriptor calls. The shell never calls `system()` and never hands the line to another shell.
+`msh` is a small UNIX shell written in C. A shell reads a line you type and asks the operating system to run it. An external command becomes a new process with `fork` and `execvp`. The shell waits for that process with `waitpid`. `cd` and `exit` run in the shell process, because a child cannot change the shell's directory or end the shell. Pipes and redirection use `pipe`, `open`, and `dup2`. The shell never calls `system()` and never hands the line to another shell.
 
-The demonstration environment named for this topic is Linux. The operating-systems laboratory machines run Fedora. The sources are POSIX C11, so `make`, `make test`, and `make bench` are the same commands on Fedora and on the machine used to develop the code.
-
+The demonstration environment for this topic is Linux. The sources are POSIX C11, so `make` and `make test` are the same commands on Linux and on the machine used to develop the code.
 
 ## Features
 
-- External commands, resolved with `execvp` and the current `PATH`
-- Builtins: `cd`, `pwd`, `exit`, `help`, `history`, `jobs`, `wait`
-- Pipelines of more than one command: `cmd1 | cmd2 | cmd3`
-- Lists: `cmd1 ; cmd2`, `cmd1 && cmd2`, `cmd1 || cmd2`
-- Redirection: `< file`, `> file`, `>> file`, `2> file`, `2>> file`
-- Background commands with `&`, including a command after the `&`, reaped so they do not stay zombies
-- `$?` for the previous status, and `~` for the home directory
+- External commands, found with `execvp` and `PATH`
+- Builtins: `cd`, `pwd`, `exit`, `help`
+- Pipelines: `cmd1 | cmd2 | cmd3`
+- Redirection: `< file`, `> file`, `>> file`
+- `$?` for the exit status of the previous command
 - Single and double quotes
-- A foreground process group, so Ctrl+C stops the running command and leaves the shell in place
 
 ## Build and run
 
-Requirements are a C11 compiler (`gcc` or `clang`), Make, and Python 3 for the tests. On Fedora, `gcc`, `make`, and `python3` are enough. There are no third-party libraries.
+Requirements are a C11 compiler (`gcc` or `clang`), Make, and Python 3 for the tests. There are no third-party libraries.
 
 ```sh
 make
@@ -29,60 +25,58 @@ make bench
 make pack
 ```
 
-`make pack` writes `OS_MiniProject_MiniUNIXShell.zip` containing the sources, tests, samples, README, and report, and omitting `.git` and build products. Rename that archive to `OS_MiniProject_TeamXX_MiniUNIXShell.zip`, and rename the PDF to `OS_MiniProject_TeamXX_Report.pdf`, once the team number is known.
+`make pack` writes `OS_MiniProject_MiniUNIXShell.zip`. Rename that archive and the PDF with the team number before submission.
 
-`make test` runs 40 functional tests and one terminal test that sends Ctrl+C. `make bench` reprints the timing measurements.
-
-A non-interactive script is a normal input stream:
+`make test` runs 33 functional tests. `make bench` reprints the timing measurements.
 
 ```sh
 printf 'echo hello\npwd\n' | ./msh
 ```
 
-The prompt is printed on standard error, so command output and the prompt stay apart.
+The prompt is printed on standard error.
 
 ## Example
 
 ```text
-msh:~$ echo hello | cat
+msh:/home/user$ echo hello | cat
 hello
-msh:~$ echo one > /tmp/note.txt
-msh:~$ echo two >> /tmp/note.txt
-msh:~$ cat < /tmp/note.txt
+msh:/home/user$ echo one > /tmp/note.txt
+msh:/home/user$ echo two >> /tmp/note.txt
+msh:/home/user$ cat < /tmp/note.txt
 one
 two
-msh:~$ printf 'b\na\n' | sort
+msh:/home/user$ printf 'b\na\n' | sort
 a
 b
-msh:~$ sleep 30
-^C
-msh:~$
+msh:/home/user$ echo $?
+0
 ```
-
-`sleep 30 &` prints a job id and a process-group id on standard error. `jobs` lists it. `wait` collects it.
 
 ## Layout
 
 ```text
-src/main.c       read-eval loop, prompt, signals
-src/parser.c     one-pass parser for words, pipes, lists, redirection
-src/execute.c    fork, pipes, redirection, process groups
-src/builtin.c    cd, pwd, exit, help, history
-src/jobs.c       background jobs and wait
-tests/           functional tests, Ctrl+C test, benchmarks
+src/main.c       read a line and run it
+src/parser.c     words, quotes, pipes, redirection
+src/execute.c    fork, execvp, waitpid, pipe, dup2
+src/builtin.c    cd, pwd, exit, help
+tests/           functional tests and benchmarks
 ```
 
 ## Limits
 
-`msh` is a demonstration of process creation, file descriptors, and pipes. It does not implement globbing, command substitution, shell variables beyond `$?`, `~user`, combining descriptors with `2>&1`, or Ctrl+Z job suspension. A builtin used inside a pipeline runs in a child, so `cd /tmp | cat` does not change the shell's directory. That is the same rule a full shell uses.
+This shell demonstrates process creation, pipes, and files. It does not implement background jobs, Ctrl+Z, `&&`, `||`, `;`, `2>`, globbing, command substitution, or variables other than `$?`. A builtin inside a pipeline runs in a child, so `cd /tmp | cat` does not change the shell's directory.
 
 ## Sample cases
 
-Normal, boundary, and invalid inputs are in `samples/session.txt`. The test file `tests/test_shell.py` is the executable version of those cases.
+Normal, boundary, and invalid inputs are in `samples/session.txt`. `tests/test_shell.py` is the executable version of those cases.
+
+## Report
+
+`REPORT.md` is the report text. The formatted copies are `report/OS_MiniProject_Report.docx` and `report/OS_MiniProject_Report.pdf`. Fill the institution name, student names, and roll numbers on the cover before printing.
 
 ## Original work
 
-The C sources, tests, and this README were written for this shell. System calls come from the C library and follow POSIX. Algorithm references are listed in `REPORT.md`.
+The C sources, tests, and this README were written for this shell. System calls come from the C library and follow POSIX. References are listed in `REPORT.md`.
 
 ## Our Team
 

@@ -1,45 +1,20 @@
 #include "builtin.h"
 
-#include "jobs.h"
-
 #include <errno.h>
 #include <limits.h>
+#include <stdlib.h>
 #include <unistd.h>
-
-#define HIST_MAX 100
-
-static char *hist[HIST_MAX];
-static int hist_len;
-
-void history_add(const char *line) {
-    if (hist_len == HIST_MAX) {
-        free(hist[0]);
-        memmove(&hist[0], &hist[1], (HIST_MAX - 1) * sizeof hist[0]);
-        hist_len--;
-    }
-    hist[hist_len++] = xstrdup(line);
-}
-
-static int builtin_history(void) {
-    for (int i = 0; i < hist_len; i++) {
-        printf("%4d  %s\n", i + 1, hist[i]);
-    }
-    return 0;
-}
 
 static int builtin_help(void) {
     fputs(
-        "msh, a minimal UNIX shell\n"
+        "msh, a small unix shell\n"
         "\n"
-        "Builtins: cd, pwd, exit, help, history, jobs, wait\n"
-        "External commands run with fork and execvp.\n"
-        "Pipelines: cmd1 | cmd2 | cmd3\n"
-        "Redirection: < file, > file, >> file, 2> file, 2>> file\n"
-        "Lists: cmd1 ; cmd2, cmd1 && cmd2, cmd1 || cmd2\n"
-        "Background: command &   (more commands may follow)\n"
-        "Status of the previous command: $?\n"
-        "Home shortcut: ~ and ~/\n"
-        "Ctrl+C stops the foreground command and returns to msh.\n",
+        "a shell reads a line and asks the operating system to run it.\n"
+        "builtins: cd, pwd, exit, help\n"
+        "external commands run with fork and execvp.\n"
+        "pipelines: cmd1 | cmd2 | cmd3\n"
+        "redirection: < file, > file, >> file\n"
+        "$? is the exit status from the previous command.\n",
         stdout);
     return 0;
 }
@@ -84,6 +59,7 @@ static int builtin_cd(Command *cmd) {
         dest = cmd->argv[1];
     }
 
+    /* chdir changes this process. a child would lose the change on exit. */
     if (chdir(dest) < 0) {
         fprintf(stderr, "msh: cd: %s: %s\n", dest, strerror(errno));
         return 1;
@@ -130,8 +106,7 @@ int builtin_is(const char *name) {
         return 0;
     }
     return strcmp(name, "cd") == 0 || strcmp(name, "pwd") == 0 || strcmp(name, "exit") == 0 ||
-           strcmp(name, "help") == 0 || strcmp(name, "history") == 0 || strcmp(name, "jobs") == 0 ||
-           strcmp(name, "wait") == 0;
+           strcmp(name, "help") == 0;
 }
 
 int builtin_run(Command *cmd) {
@@ -145,19 +120,11 @@ int builtin_run(Command *cmd) {
         status = builtin_exit(cmd);
     } else if (strcmp(name, "help") == 0) {
         status = builtin_help();
-    } else if (strcmp(name, "history") == 0) {
-        status = builtin_history();
-    } else if (strcmp(name, "jobs") == 0) {
-        jobs_list();
-        status = 0;
-    } else if (strcmp(name, "wait") == 0) {
-        status = jobs_wait_all();
     } else {
         fprintf(stderr, "msh: %s: not a builtin\n", name);
         status = 1;
     }
-    /* _exit() does not flush, and a redirected builtin swaps file descriptors
-     * under stdio. Push the buffer out before either of those happens. */
+    /* flush before _exit, and before a redirected builtin restores its fds. */
     fflush(stdout);
     fflush(stderr);
     return status;

@@ -1,24 +1,11 @@
 #include "execute.h"
 
 #include "builtin.h"
-#include "jobs.h"
 
 #include <errno.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <unistd.h>
 #include <sys/wait.h>
-
-static void child_signals(void) {
-    signal(SIGINT, SIG_DFL);
-    signal(SIGQUIT, SIG_DFL);
-    /* Suspension is intentionally not implemented. Leaving SIGTSTP at
-     * SIG_DFL would stop a child while the shell is still blocked in wait. */
-    signal(SIGTSTP, SIG_IGN);
-    signal(SIGTTIN, SIG_IGN);
-    signal(SIGTTOU, SIG_IGN);
-    signal(SIGPIPE, SIG_DFL);
-}
 
 static int open_input(const char *path) {
     int fd = open(path, O_RDONLY);
@@ -46,7 +33,7 @@ static void restore_fd(int saved, int target) {
     }
 }
 
-/* Install fd onto target. If open() returned target itself, leave it there. */
+/* point target at fd. if open already returned target, leave it. */
 static int move_fd(int fd, int target) {
     if (fd == target) {
         return 0;
@@ -79,23 +66,14 @@ static int redirect_one(const char *path, int input, int append, int target, int
     return 0;
 }
 
-static int apply_redirs(const Command *cmd, int *saved_in, int *saved_out, int *saved_err) {
+static int apply_redirs(const Command *cmd, int *saved_in, int *saved_out) {
     *saved_in = -1;
     *saved_out = -1;
-    *saved_err = -1;
     if (cmd->infile && redirect_one(cmd->infile, 1, 0, STDIN_FILENO, saved_in) != 0) {
         return -1;
     }
     if (cmd->outfile && redirect_one(cmd->outfile, 0, cmd->append, STDOUT_FILENO, saved_out) != 0) {
         restore_fd(*saved_in, STDIN_FILENO);
-        *saved_in = -1;
-        return -1;
-    }
-    if (cmd->errfile &&
-        redirect_one(cmd->errfile, 0, cmd->err_append, STDERR_FILENO, saved_err) != 0) {
-        restore_fd(*saved_out, STDOUT_FILENO);
-        restore_fd(*saved_in, STDIN_FILENO);
-        *saved_out = -1;
         *saved_in = -1;
         return -1;
     }
@@ -105,10 +83,9 @@ static int apply_redirs(const Command *cmd, int *saved_in, int *saved_out, int *
 static int run_parent_builtin(Command *cmd) {
     int saved_in;
     int saved_out;
-    int saved_err;
     fflush(stdout);
     fflush(stderr);
-    if (apply_redirs(cmd, &saved_in, &saved_out, &saved_err) != 0) {
+    if (apply_redirs(cmd, &saved_in, &saved_out) != 0) {
         return 1;
     }
     int status = builtin_run(cmd);
@@ -116,7 +93,6 @@ static int run_parent_builtin(Command *cmd) {
     fflush(stderr);
     restore_fd(saved_in, STDIN_FILENO);
     restore_fd(saved_out, STDOUT_FILENO);
-    restore_fd(saved_err, STDERR_FILENO);
     return status;
 }
 
@@ -139,18 +115,27 @@ static int decode_status(int st) {
     return 1;
 }
 
+static void child_redirect(const Command *cmd) {
+    if (cmd->infile) {
+        int fd = open_input(cmd->infile);
+        if (fd < 0 || move_fd(fd, STDIN_FILENO) < 0) {
+            _exit(1);
+        }
+    }
+    if (cmd->outfile) {
+        int fd = open_output(cmd->outfile, cmd->append);
+        if (fd < 0 || move_fd(fd, STDOUT_FILENO) < 0) {
+            _exit(1);
+        }
+    }
+}
+
 static void run_child(Pipeline *pipeline, int index, int *pipefds) {
     sh_in_child = 1;
     Command *cmd = &pipeline->cmds[index];
     int ncmds = pipeline->ncmds;
-    pid_t pgid = sh_pgid;
 
-    if (pgid == 0) {
-        pgid = getpid();
-    }
-    setpgid(0, pgid);
-    child_signals();
-
+    /* connect this stage to the previous and next pipe ends. */
     if (index > 0 && dup2(pipefds[(index - 1) * 2], STDIN_FILENO) < 0) {
         _exit(1);
     }
@@ -167,32 +152,15 @@ static void run_child(Pipeline *pipeline, int index, int *pipefds) {
         }
     }
 
-    /* File redirections override the pipe ends for this stage, including
-     * a stage that is neither first nor last. */
-    if (cmd->infile) {
-        int fd = open_input(cmd->infile);
-        if (fd < 0 || move_fd(fd, STDIN_FILENO) < 0) {
-            _exit(1);
-        }
-    }
-    if (cmd->outfile) {
-        int fd = open_output(cmd->outfile, cmd->append);
-        if (fd < 0 || move_fd(fd, STDOUT_FILENO) < 0) {
-            _exit(1);
-        }
-    }
-    if (cmd->errfile) {
-        int fd = open_output(cmd->errfile, cmd->err_append);
-        if (fd < 0 || move_fd(fd, STDERR_FILENO) < 0) {
-            _exit(1);
-        }
-    }
+    /* a named file replaces the pipe end for this stage. */
+    child_redirect(cmd);
 
     if (builtin_is(cmd->argv[0])) {
         int status = builtin_run(cmd);
         _exit(status);
     }
 
+    /* replace this child with the program. the parent keeps running. */
     execvp(cmd->argv[0], cmd->argv);
     if (errno == ENOENT) {
         fprintf(stderr, "msh: %s: command not found\n", cmd->argv[0]);
@@ -202,39 +170,25 @@ static void run_child(Pipeline *pipeline, int index, int *pipefds) {
     _exit(126);
 }
 
-static int wait_pipeline(pid_t pgid, pid_t last_pid) {
+static int wait_pipeline(pid_t *pids, int count) {
     int status = 0;
-    int saw_last = 0;
-    while (!saw_last) {
+    for (int i = 0; i < count; i++) {
         int st;
-        pid_t pid = waitpid(-pgid, &st, 0);
-        if (pid < 0) {
+        while (waitpid(pids[i], &st, 0) < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            break;
+            return 1;
         }
-        if (pid == last_pid) {
+        if (i == count - 1) {
             status = decode_status(st);
-            saw_last = 1;
-        }
-    }
-    /* Collect the remaining members so they do not stay zombies. */
-    while (1) {
-        int st;
-        pid_t pid = waitpid(-pgid, &st, 0);
-        if (pid < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            break;
         }
     }
     return status;
 }
 
-int execute_pipeline(Pipeline *pipeline, const char *cmdline) {
-    if (pipeline->ncmds == 1 && !pipeline->background && builtin_is(pipeline->cmds[0].argv[0])) {
+int execute_pipeline(Pipeline *pipeline) {
+    if (pipeline->ncmds == 1 && builtin_is(pipeline->cmds[0].argv[0])) {
         return run_parent_builtin(&pipeline->cmds[0]);
     }
 
@@ -252,6 +206,7 @@ int execute_pipeline(Pipeline *pipeline, const char *cmdline) {
         }
         for (int i = 0; i < ncmds - 1; i++) {
             int pair[2];
+            /* pipe is a kernel buffer shared by two processes. */
             if (pipe(pair) < 0) {
                 fprintf(stderr, "msh: pipe: %s\n", strerror(errno));
                 close_pair_list(pipefds, pipe_count);
@@ -264,16 +219,13 @@ int execute_pipeline(Pipeline *pipeline, const char *cmdline) {
     }
 
     pid_t pids[SH_MAX_CMDS];
-    pid_t pgid = 0;
     int started = 0;
 
     for (int i = 0; i < ncmds; i++) {
+        /* fork copies the shell. the child becomes one pipeline stage. */
         pid_t pid = fork();
         if (pid < 0) {
             fprintf(stderr, "msh: fork: %s\n", strerror(errno));
-            if (pgid > 0) {
-                kill(-pgid, SIGTERM);
-            }
             for (int j = 0; j < started; j++) {
                 waitpid(pids[j], NULL, 0);
             }
@@ -282,44 +234,15 @@ int execute_pipeline(Pipeline *pipeline, const char *cmdline) {
             return 1;
         }
         if (pid == 0) {
-            /* sh_pgid is borrowed so the child can join the pipeline group. */
-            sh_pgid = pgid;
             run_child(pipeline, i, pipefds);
             _exit(1);
         }
-        if (pgid == 0) {
-            pgid = pid;
-        }
-        /* The child sets the same group. EACCES or ESRCH means it already ran. */
-        (void)setpgid(pid, pgid);
         pids[started++] = pid;
     }
 
     close_pair_list(pipefds, pipe_count);
     free(pipefds);
 
-    if (pipeline->background) {
-        int id = jobs_add(pgid, pids, started, cmdline);
-        if (id < 0) {
-            kill(-pgid, SIGTERM);
-            for (int j = 0; j < started; j++) {
-                waitpid(pids[j], NULL, 0);
-            }
-            return 1;
-        }
-        fprintf(stderr, "[%d] %ld\n", id, (long)pgid);
-        return 0;
-    }
-
-    if (sh_owns_tty) {
-        tcsetpgrp(sh_terminal, pgid);
-    }
-    int status = wait_pipeline(pgid, pids[started - 1]);
-    if (sh_owns_tty) {
-        tcsetpgrp(sh_terminal, sh_pgid);
-    }
-    if (sh_interactive && status == 128 + SIGINT) {
-        fputc('\n', stderr);
-    }
-    return status;
+    /* waitpid reaps every child. the last stage sets the status. */
+    return wait_pipeline(pids, started);
 }

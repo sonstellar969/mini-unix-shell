@@ -3,6 +3,6 @@
 
 #include "shell.h"
 
-int execute_pipeline(Pipeline *pipeline, const char *cmdline);
+int execute_pipeline(Pipeline *pipeline);
 
 #endif

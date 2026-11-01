@@ -15,13 +15,10 @@ static void command_clear(Command *cmd) {
     }
     free(cmd->infile);
     free(cmd->outfile);
-    free(cmd->errfile);
     cmd->infile = NULL;
     cmd->outfile = NULL;
-    cmd->errfile = NULL;
     cmd->argc = 0;
     cmd->append = 0;
-    cmd->err_append = 0;
 }
 
 void pipeline_free(Pipeline *pipeline) {
@@ -32,7 +29,6 @@ void pipeline_free(Pipeline *pipeline) {
         command_clear(&pipeline->cmds[i]);
     }
     pipeline->ncmds = 0;
-    pipeline->background = 0;
 }
 
 static int add_arg(Command *cmd, char *word) {
@@ -46,6 +42,7 @@ static int add_arg(Command *cmd, char *word) {
     return 0;
 }
 
+/* $? is the exit status waitpid stored. quoted text is left alone. */
 static char *expand_word(char *word, int quoted) {
     if (quoted) {
         return word;
@@ -56,28 +53,9 @@ static char *expand_word(char *word, int quoted) {
         free(word);
         return xstrdup(buf);
     }
-    if (word[0] == '~' && (word[1] == '\0' || word[1] == '/')) {
-        const char *home = getenv("HOME");
-        if (!home || !home[0]) {
-            return word;
-        }
-        size_t home_len = strlen(home);
-        size_t word_len = strlen(word);
-        char *expanded = malloc(home_len + word_len);
-        if (!expanded) {
-            fprintf(stderr, "msh: out of memory\n");
-            exit(EXIT_FAILURE);
-        }
-        memcpy(expanded, home, home_len);
-        memcpy(expanded + home_len, word + 1, word_len);
-        free(word);
-        return expanded;
-    }
     return word;
 }
 
-/* Read one shell word. Returns 1 if a word was stored, 0 if the next
- * character is not a word, and -1 on a syntax or memory error. */
 static int read_word(const char *s, size_t *i, char **out) {
     size_t n = strlen(s);
     if (*i >= n) {
@@ -142,65 +120,8 @@ static int read_word(const char *s, size_t *i, char **out) {
     return 1;
 }
 
-static int finish_command(Pipeline *pipeline, int idx);
-
 static int command_is_empty(const Command *cmd) {
-    return cmd->argc == 0 && !cmd->infile && !cmd->outfile && !cmd->errfile;
-}
-
-/* Finish the current segment. *i already points past the operator.
- * need_more rejects a trailing && or ||. */
-static int stop_segment(const char *line, size_t *i, Pipeline *out, int idx, int op, int *op_out,
-                        int need_more) {
-    if (command_is_empty(&out->cmds[idx]) || finish_command(out, idx) != 0) {
-        if (command_is_empty(&out->cmds[idx])) {
-            fprintf(stderr, "msh: syntax error: missing command\n");
-        }
-        return -1;
-    }
-    if (op == SH_OP_BG) {
-        out->background = 1;
-    }
-    if (need_more) {
-        size_t j = *i;
-        skip_ws(line, &j);
-        if (line[j] == '\0' || line[j] == '#') {
-            fprintf(stderr, "msh: syntax error: incomplete list\n");
-            return -1;
-        }
-    }
-    *op_out = op;
-    return 0;
-}
-
-static int take_redirect(Command *cmd, int input, int append, int error, char *word) {
-    if (input) {
-        if (cmd->infile) {
-            free(word);
-            fprintf(stderr, "msh: syntax error: duplicate input redirection\n");
-            return -1;
-        }
-        cmd->infile = word;
-        return 0;
-    }
-    if (error) {
-        if (cmd->errfile) {
-            free(word);
-            fprintf(stderr, "msh: syntax error: duplicate error redirection\n");
-            return -1;
-        }
-        cmd->errfile = word;
-        cmd->err_append = append;
-        return 0;
-    }
-    if (cmd->outfile) {
-        free(word);
-        fprintf(stderr, "msh: syntax error: duplicate output redirection\n");
-        return -1;
-    }
-    cmd->outfile = word;
-    cmd->append = append;
-    return 0;
+    return cmd->argc == 0 && !cmd->infile && !cmd->outfile;
 }
 
 static int finish_command(Pipeline *pipeline, int idx) {
@@ -213,48 +134,25 @@ static int finish_command(Pipeline *pipeline, int idx) {
     return 0;
 }
 
-static int read_target(const char *line, size_t *i, Pipeline *out, char **word) {
-    skip_ws(line, i);
-    int rc = read_word(line, i, word);
-    if (rc < 0) {
-        pipeline_free(out);
-        return -1;
-    }
-    if (rc == 0) {
-        fprintf(stderr, "msh: syntax error: missing redirection target\n");
-        pipeline_free(out);
-        return -1;
-    }
-    return 0;
-}
-
-int parse_segment(const char *line, size_t *pos, Pipeline *out, int *op, size_t *cut) {
+int parse_line(const char *line, Pipeline *out) {
     memset(out, 0, sizeof *out);
     out->ncmds = 1;
-    *op = SH_OP_END;
 
-    size_t i = *pos;
+    size_t i = 0;
     size_t n = strlen(line);
     int idx = 0;
-    int saw = 0;
 
     while (i < n) {
         skip_ws(line, &i);
         if (i >= n || line[i] == '#') {
             break;
         }
-        saw = 1;
 
-        if (line[i] == '|' && line[i + 1] == '|') {
-            size_t at = i;
-            i += 2;
-            if (stop_segment(line, &i, out, idx, SH_OP_OR, op, 1) != 0) {
-                pipeline_free(out);
-                return -1;
-            }
-            *cut = at;
-            *pos = i;
-            return 0;
+        /* shell language and job control are outside this project. */
+        if (line[i] == '&' || line[i] == ';' || (line[i] == '2' && line[i + 1] == '>')) {
+            fprintf(stderr, "msh: syntax error: operator not supported\n");
+            pipeline_free(out);
+            return -1;
         }
 
         if (line[i] == '|') {
@@ -276,65 +174,6 @@ int parse_segment(const char *line, size_t *pos, Pipeline *out, int *op, size_t 
             continue;
         }
 
-        if (line[i] == '&' && line[i + 1] == '&') {
-            size_t at = i;
-            i += 2;
-            if (stop_segment(line, &i, out, idx, SH_OP_AND, op, 1) != 0) {
-                pipeline_free(out);
-                return -1;
-            }
-            *cut = at;
-            *pos = i;
-            return 0;
-        }
-
-        if (line[i] == '&') {
-            size_t at = i;
-            i++;
-            if (stop_segment(line, &i, out, idx, SH_OP_BG, op, 0) != 0) {
-                pipeline_free(out);
-                return -1;
-            }
-            *cut = at;
-            *pos = i;
-            return 0;
-        }
-
-        if (line[i] == ';') {
-            size_t at = i;
-            i++;
-            if (stop_segment(line, &i, out, idx, SH_OP_SEMI, op, 0) != 0) {
-                pipeline_free(out);
-                return -1;
-            }
-            *cut = at;
-            *pos = i;
-            return 0;
-        }
-
-        if (line[i] == '2' && line[i + 1] == '>') {
-            int append = 0;
-            i += 2;
-            if (line[i] == '>') {
-                append = 1;
-                i++;
-            }
-            if (line[i] == '&') {
-                fprintf(stderr, "msh: syntax error: unsupported redirection\n");
-                pipeline_free(out);
-                return -1;
-            }
-            char *word = NULL;
-            if (read_target(line, &i, out, &word) != 0) {
-                return -1;
-            }
-            if (take_redirect(&out->cmds[idx], 0, append, 1, word) != 0) {
-                pipeline_free(out);
-                return -1;
-            }
-            continue;
-        }
-
         if (line[i] == '<' || line[i] == '>') {
             int input = line[i] == '<';
             int append = 0;
@@ -343,18 +182,36 @@ int parse_segment(const char *line, size_t *pos, Pipeline *out, int *op, size_t 
                 append = 1;
                 i++;
             }
-            if (!input && line[i] == '&') {
-                fprintf(stderr, "msh: syntax error: unsupported redirection\n");
-                pipeline_free(out);
-                return -1;
-            }
+            skip_ws(line, &i);
             char *word = NULL;
-            if (read_target(line, &i, out, &word) != 0) {
-                return -1;
-            }
-            if (take_redirect(&out->cmds[idx], input, append, 0, word) != 0) {
+            int rc = read_word(line, &i, &word);
+            if (rc < 0) {
                 pipeline_free(out);
                 return -1;
+            }
+            if (rc == 0) {
+                fprintf(stderr, "msh: syntax error: missing redirection target\n");
+                pipeline_free(out);
+                return -1;
+            }
+            Command *cmd = &out->cmds[idx];
+            if (input) {
+                if (cmd->infile) {
+                    free(word);
+                    fprintf(stderr, "msh: syntax error: duplicate input redirection\n");
+                    pipeline_free(out);
+                    return -1;
+                }
+                cmd->infile = word;
+            } else {
+                if (cmd->outfile) {
+                    free(word);
+                    fprintf(stderr, "msh: syntax error: duplicate output redirection\n");
+                    pipeline_free(out);
+                    return -1;
+                }
+                cmd->outfile = word;
+                cmd->append = append;
             }
             continue;
         }
@@ -376,20 +233,14 @@ int parse_segment(const char *line, size_t *pos, Pipeline *out, int *op, size_t 
         }
     }
 
-    if (!saw) {
-        pipeline_free(out);
-        *cut = i;
-        *pos = i;
-        return 1;
-    }
-    if (command_is_empty(&out->cmds[idx]) || finish_command(out, idx) != 0) {
-        if (command_is_empty(&out->cmds[idx])) {
-            fprintf(stderr, "msh: syntax error: missing command\n");
-        }
+    if (command_is_empty(&out->cmds[idx])) {
+        fprintf(stderr, "msh: syntax error: missing command\n");
         pipeline_free(out);
         return -1;
     }
-    *cut = i;
-    *pos = i;
+    if (finish_command(out, idx) != 0) {
+        pipeline_free(out);
+        return -1;
+    }
     return 0;
 }

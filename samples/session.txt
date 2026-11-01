@@ -1,7 +1,6 @@
 # Sample session
 
-Input is what the user types. The working directory in this transcript is written as
-/home/user/mini-unix-shell. Standard error is marked with # stderr.
+Input is what the user types. Standard error is marked with # stderr.
 
 help
 echo hello world
@@ -23,17 +22,14 @@ echo $?
 
 Observed output:
 
-msh, a minimal UNIX shell
+msh, a small unix shell
 
-Builtins: cd, pwd, exit, help, history, jobs, wait
-External commands run with fork and execvp.
-Pipelines: cmd1 | cmd2 | cmd3
-Redirection: < file, > file, >> file, 2> file, 2>> file
-Lists: cmd1 ; cmd2, cmd1 && cmd2, cmd1 || cmd2
-Background: command &   (more commands may follow)
-Status of the previous command: $?
-Home shortcut: ~ and ~/
-Ctrl+C stops the foreground command and returns to msh.
+a shell reads a line and asks the operating system to run it.
+builtins: cd, pwd, exit, help
+external commands run with fork and execvp.
+pipelines: cmd1 | cmd2 | cmd3
+redirection: < file, > file, >> file
+$? is the exit status from the previous command.
 hello world
 quoted args
 /private/tmp
@@ -54,27 +50,10 @@ Notes:
 - `cd /tmp` then `pwd` prints the physical directory. On the test machine that is /private/tmp.
 - `cd -` prints the directory it returns to.
 - `wc` pads its count. The shell does not add those spaces.
-- `false` is an external command. `$?` is 1.
+- `false` is an external command. `$?` is 1, the status waitpid collected.
 - An unknown command exits 127. The next command still runs.
 - `ls |` is a syntax error. The shell sets status 2 and stays up.
-
-Background input:
-
-sleep 1 &
-jobs
-wait
-echo waited
-
-Observed:
-
-# stderr
-[1] 9426
-
-# stdout
-[1] running pgid=9426 sleep 1
-waited
-
-The process id is chosen by the kernel and changes every run. `wait` returns when the sleep exits. The shell's own status after a successful `wait` is the job's status (0 here).
+- `&`, `;`, `&&`, `||`, and `2>` are rejected. They are not part of this shell.
 
 Invalid and boundary cases covered by tests/test_shell.py:
 
@@ -84,13 +63,11 @@ Invalid and boundary cases covered by tests/test_shell.py:
 - duplicate output redirection
 - redirection with no target
 - unclosed quote
-- a trailing `&&` or `||`
-- `2>&1`, which is rejected
-- a redirect on a middle pipeline stage, which overrides that stage's pipe
-- `2>` and `2>>`
+- `&`, `;`, and `2>`, which are rejected
 - a command that is only `> outfile`
 - empty input file
 - missing input file
 - `exit` with a non-numeric argument, which must not quit
 - `$?` inside quotes, which must stay the two characters $?
 - a pipeline of 31 stages, which checks that pipe descriptors are closed
+- a redirect on a middle pipeline stage, which replaces that stage's pipe end

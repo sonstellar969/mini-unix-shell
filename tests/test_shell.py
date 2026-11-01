@@ -91,11 +91,6 @@ class ShellTests(unittest.TestCase):
         self.assertIn("HOME not set", result.stderr)
         self.assertEqual(result.stdout.strip(), "STILL")
 
-    def test_tilde(self):
-        home = physical(os.environ["HOME"])
-        result = self.run_script("cd ~\npwd\n")
-        self.assertEqual(result.stdout.strip(), home)
-
     def test_output_redirection_and_append(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "out.txt"
@@ -176,11 +171,11 @@ class ShellTests(unittest.TestCase):
             "ls |\n",
             "| ls\n",
             "ls >\n",
-            "echo \"unterminated\n",
-            "echo a &&\n",
-            "echo a ||\n",
+            'echo "unterminated\n',
+            "echo hi &\n",
+            "echo a ;\n",
+            "echo a 2> /tmp/msh-err\n",
             "> outfile\n",
-            "echo a 2>&1\n",
         ]
         for script in cases:
             with self.subTest(script=script):
@@ -208,28 +203,10 @@ class ShellTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "STILL")
         self.assertEqual(result.returncode, 0)
 
-    def test_history(self):
-        result = self.run_script("echo one\nhistory\n")
-        self.assertIn("echo one", result.stdout)
-        self.assertIn("history", result.stdout)
-
     def test_help(self):
         result = self.run_script("help\n")
+        self.assertIn("fork", result.stdout)
         self.assertIn("cd", result.stdout)
-        self.assertIn("Ctrl+C", result.stdout)
-
-    def test_background_jobs_and_wait(self):
-        result = self.run_script("sleep 1 &\njobs\nwait\necho DONE\n", timeout=10)
-        self.assertIn("running", result.stdout)
-        self.assertIn("sleep 1", result.stdout)
-        self.assertNotIn("sleep 1 &", result.stdout)
-        self.assertIn("DONE", result.stdout)
-        self.assertEqual(result.returncode, 0)
-
-    def test_background_missing_command_status(self):
-        result = self.run_script("no_such_msh_bg &\nwait\necho $?\n", timeout=10)
-        self.assertIn("command not found", result.stderr)
-        self.assertEqual(result.stdout.strip(), "127")
 
     def test_question_status_not_expanded_when_quoted(self):
         result = self.run_script("false\necho '$?'\n")
@@ -239,37 +216,6 @@ class ShellTests(unittest.TestCase):
         result = self.run_script("false\n")
         self.assertEqual(result.returncode, 1)
 
-    def test_list_operators(self):
-        both = self.run_script("echo A && echo B\n")
-        self.assertEqual(both.stdout, "A\nB\n")
-
-        skipped = self.run_script("false && echo NO\necho $?\n")
-        self.assertNotIn("NO", skipped.stdout)
-        self.assertEqual(skipped.stdout.strip(), "1")
-
-        otherwise = self.run_script("false || echo YES\n")
-        self.assertEqual(otherwise.stdout.strip(), "YES")
-
-        chain = self.run_script("false && echo NO || echo YES\necho $?\n")
-        self.assertEqual(chain.stdout.splitlines(), ["YES", "0"])
-
-        semi = self.run_script("false ; echo $?\n")
-        self.assertEqual(semi.stdout.strip(), "1")
-
-        trailing = self.run_script("echo A ;\necho $?\n")
-        self.assertEqual(trailing.stdout.splitlines(), ["A", "0"])
-
-        incomplete = self.run_script("echo HIDDEN &&\necho $?\n")
-        self.assertNotIn("HIDDEN", incomplete.stdout)
-        self.assertIn("incomplete list", incomplete.stderr)
-        self.assertEqual(incomplete.stdout.strip(), "2")
-
-    def test_ampersand_separator(self):
-        result = self.run_script("echo hi & echo next\nwait\n", timeout=10)
-        self.assertIn("hi", result.stdout)
-        self.assertIn("next", result.stdout)
-        self.assertEqual(result.returncode, 0)
-
     def test_redirect_overrides_pipe(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "out.txt"
@@ -278,25 +224,6 @@ class ShellTests(unittest.TestCase):
             middle = self.run_script(f"printf 'a\\n' | cat > {target} | cat\n")
             self.assertEqual(middle.stdout, "")
             self.assertEqual(target.read_text(), "a\n")
-
-    def test_stderr_redirection(self):
-        with tempfile.TemporaryDirectory() as directory:
-            err = Path(directory) / "err.txt"
-            missing = directory + "/no-such-msh-dir"
-            result = self.run_script(
-                f"cd {missing} 2> {err}\n"
-                f"echo $?\n"
-                f"ls {missing} 2>> {err}\n"
-                f"cat {err}\n"
-            )
-            self.assertEqual(result.stdout.splitlines()[0], "1")
-            self.assertNotIn("No such file", result.stderr)
-            text = err.read_text()
-            self.assertEqual(text.count("No such file"), 2)
-            self.assertIn("cd:", text)
-            duplicate = self.run_script(f"echo a 2> {err} 2> {err}.2\necho $?\n")
-            self.assertIn("duplicate error redirection", duplicate.stderr)
-            self.assertEqual(duplicate.stdout.strip(), "2")
 
 
 if __name__ == "__main__":
