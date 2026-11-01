@@ -73,7 +73,7 @@ Normal, boundary, and invalid inputs are in `samples/session.txt`. `tests/test_s
 
 ## Original work
 
-The C sources, tests, and this README were written for this shell. System calls come from the C library and follow POSIX. References are listed in `REPORT.md`.
+The C sources, tests, and this README were written for this shell. System calls come from the C library and follow POSIX.
 
 ## Our Team
 
