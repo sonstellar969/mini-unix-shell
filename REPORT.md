@@ -32,7 +32,7 @@ Delete unused member lines. Fill the institution name and the PRNs before printi
 
 Abstract
 
-This project presents msh, a minimal UNIX shell written in POSIX C and used from the command line. A shell reads a command line and turns it into processes, pipes, and open files. msh does that work with fork, execvp, pipe, dup2, and waitpid. It does not call system(), and it does not pass the line to another shell. Commands that must change the shell, such as cd and exit, run in the shell process when they are a simple command. External commands run in children. A pipeline is a sequence of children joined by anonymous pipes and placed in one process group. On a terminal, the shell gives that group the foreground, so Ctrl+C stops the command and returns control to msh. Background commands stay in their own process group and are reaped so they do not remain zombies. The source is split into a parser, an executor, builtins, and a job table. Thirty-six functional tests and a terminal interrupt test cover ordinary commands, pipelines, redirection, and invalid input. On the measurement machine a builtin pwd cost about 0.024 ms, an external true cost about 1.244 ms, and a two-process pipeline cost about 1.823 ms. The result is a shell small enough to explain line by line and complete enough to demonstrate process creation, file descriptors, and inter-process communication.
+This project presents msh, a minimal UNIX shell written in POSIX C and used from the command line. A shell reads a command line and turns it into processes, pipes, and open files. msh does that work with fork, execvp, pipe, dup2, and waitpid. It does not call system(), and it does not pass the line to another shell. Commands that must change the shell, such as cd and exit, run in the shell process when they are a simple command. External commands run in children. A pipeline is a sequence of children joined by anonymous pipes and placed in one process group. On a terminal, the shell gives that group the foreground, so Ctrl+C stops the command and returns control to msh. Background commands stay in their own process group and are reaped so they do not remain zombies. The source is split into a parser, an executor, builtins, and a job table. Forty functional tests and a terminal interrupt test cover ordinary commands, pipelines, redirection, and invalid input. On the measurement machine a builtin pwd cost about 0.024 ms, an external true cost about 1.244 ms, and a two-process pipeline cost about 1.823 ms. The result is a shell small enough to explain line by line and complete enough to demonstrate process creation, file descriptors, and inter-process communication.
 
 Table of contents
 
@@ -74,11 +74,11 @@ The shell must also be explainable. Every call that creates a process, a pipe, o
 
 2.2 Objectives
 
-1. Parse a command line into a pipeline, including quoted words, input redirection, output redirection, append redirection, and a background marker.
+1. Parse a command line into pipelines separated by ;, &&, and ||, including quoted words, input redirection, output redirection, append redirection, standard-error redirection, and a background marker.
 2. Execute external programs with fork and execvp, and collect their termination status with waitpid.
 3. Execute cd, pwd, exit, help, history, jobs, and wait in the shell process when they are not part of a pipeline and not backgrounded.
 4. Connect the stages of a pipeline with anonymous pipes, including pipelines of many stages, and close the unused ends so that readers observe end of file.
-5. Apply file redirection in the correct stage: input on the first command, output on the last command, and both on a command that stands alone.
+5. Apply each command's redirection after its pipe ends are attached, so the file overrides that stage. This covers input, output, append, and standard error, including a stage in the middle of a pipeline.
 6. Place each pipeline in a new process group and, on a terminal, give that group the foreground so that Ctrl+C stops the command and the shell prints a new prompt.
 7. Record background pipelines and reap them, so a finished background command does not remain a zombie, and so wait can return its status.
 8. Accept a script on standard input with no prompt, which is what the automated tests use.
@@ -86,7 +86,7 @@ The shell must also be explainable. Every call that creates a process, a pipe, o
 
 2.3 Scope
 
-msh implements the process and file-descriptor core of a shell. It does not implement the shell as a programming language. There is no if, while, case, or for. There is no command substitution, no globbing, and no general variables. The token $? is expanded when it is not quoted, and a word that is ~ or that starts with ~/ is expanded to the home directory. Those two expansions are enough to show that the shell, not the child program, rewrites the line. Job control stops at background and wait. Ctrl+Z does not suspend a process, and there is no fg or bg. Standard error is left on the terminal. A separate 2> redirection is outside the scope. These limits are deliberate. Each one is a feature that can be added later without changing the process model, and each one avoided is a feature the tests do not have to pretend to cover.
+msh implements the process and file-descriptor core of a shell, plus the list operators &&, ||, and ; and redirection of standard error with 2> and 2>>. It does not implement the shell as a programming language. There is no if, while, case, or for. There is no command substitution, no globbing, and no general variables. The token $? is expanded when it is not quoted, and a word that is ~ or that starts with ~/ is expanded to the home directory. Those two expansions are enough to show that the shell, not the child program, rewrites the line. Job control stops at background and wait. Ctrl+Z does not suspend a process, and there is no fg or bg. Combining descriptors, as in 2>&1, is outside the scope. These limits are deliberate. Each one avoided is a feature the tests do not have to pretend to cover.
 
 2.4 Expected outcome
 
@@ -125,7 +125,7 @@ Modern textbooks organize the same facts into chapters a course already uses. Si
 
 3.2 Bourne's shell and what this project keeps
 
-Bourne's 1978 paper describes the shell as two things at once [2]. As a command language it finds programs by searching directories, redirects input and output, and starts processes that communicate through pipes. As a programming language it has variables, control flow, and a return code that selects the next branch. The abstract of that paper is almost a requirements list for a shell project. msh keeps the command-language half and one piece of the return code. Every pipeline records a status. $? expands to it. The programming-language half is named in the future-scope section and is not implemented, because a correct if statement is a parser project sitting on top of a shell, and the operating-system content is the layer underneath.
+Bourne's 1978 paper describes the shell as two things at once [2]. As a command language it finds programs by searching directories, redirects input and output, and starts processes that communicate through pipes. As a programming language it has variables, control flow, and a return code that selects the next branch. The abstract of that paper is almost a requirements list for a shell project. msh keeps the command-language half and the return code. Every pipeline records a status. $? expands to it. && and || use that status to decide whether the next segment runs. if and while are named in the future-scope section and are not implemented, because a correct if statement is a parser project sitting on top of a shell, and the operating-system content is the layer underneath.
 
 Kernighan and Pike show why the command-language half is worth getting right [3]. Filters become a toolkit only when the shell can bind the output of one to the input of the next. Their examples are pipelines of existing programs. msh can run those examples when the programs exist on the machine: sort, wc, cat, and printf are not built into msh. They are children. That choice keeps the shell honest. Re-implementing sort inside the shell would demonstrate an algorithm from a different unit.
 
@@ -140,12 +140,12 @@ External command via PATH       yes                      yes
 Builtin cd and exit             yes                      yes
 Pipeline of n commands          yes                      yes, up to 32 stages
 Input and output redirection    yes                      yes, < > and >>
-Background with &               yes                      yes, trailing & only
+Background with &               yes                      yes, more commands may follow
 Foreground Ctrl+C               yes                      yes
 Ctrl+Z, fg, bg                  yes                      no
-&&, ||, and ;                   yes                      no
+&&, ||, and ;                   yes                      yes
 Globbing and variables          yes                      $? and ~ only
-Separate stderr redirection     yes                      no
+Separate stderr redirection     yes                      yes, 2> and 2>>
 Shell scripts with if/while     yes                      no
 
 The POSIX standard is the reference for the calls even where the language is smaller [9]. fork, exec, pipe, dup2, waitpid, setpgid, and tcsetpgrp are specified there. msh uses the C library wrappers for those calls and does not depend on a Linux-only interface. The same sources are intended to build with clang or gcc on a POSIX system. The measurements in Section 7 were taken on one machine, which is named there, and should be repeated if the binary is marked on a different kernel. The behavior tests do not depend on the timing numbers.
@@ -169,15 +169,15 @@ R2. On a terminal it prints a prompt of the form msh:<directory>$ on standard er
 R3. An external command runs as a child. If execvp cannot find it, the child exits 127 and the shell prints "command not found".
 R4. cd, pwd, exit, help, history, jobs, and wait are builtins. A simple builtin runs in the shell. cd changes the shell's working directory. exit ends the shell.
 R5. A pipeline cmd1 | cmd2 | cmd3 runs each stage in its own process, with standard output of each stage except the last attached to standard input of the next.
-R6. < file opens file for reading on standard input. > file creates or truncates file for standard output. >> file appends.
-R7. A trailing & runs the pipeline in the background. The shell prints a job id and a process-group id and does not wait. jobs lists running jobs. wait waits for them.
+R6. < file opens file for reading on standard input. > file creates or truncates file for standard output. >> file appends. 2> file and 2>> file do the same for standard error. The redirection applies to the command it is written on and overrides that stage's pipe end.
+R7. & runs the pipeline in the background and may be followed by another command. The shell prints a job id and a process-group id and does not wait. jobs lists running jobs. wait waits for them.
 R8. $? expands to the status of the previous pipeline when the token is not quoted.
 R9. Ctrl+C on a terminal stops the foreground pipeline and returns to the prompt. A background sleep started just before that command is still listed by jobs.
-R10. Invalid input produces an error on standard error and a non-zero status, and the shell accepts another command. The invalid cases required here are an empty stage in a pipeline, a redirection with no target, a duplicate redirection, an unclosed quote, an ampersand that is not last, a missing input file, a directory cd cannot enter, and a non-numeric exit status.
+R10. Invalid input produces an error on standard error and a non-zero status, and the shell accepts another command. The invalid cases required here are an empty stage in a pipeline, a redirection with no target, a duplicate redirection, an unclosed quote, a trailing && or ||, an unsupported 2>&1, a missing input file, a directory cd cannot enter, and a non-numeric exit status.
 
 4.2 Non-functional requirements
 
-The source is C11 and is split by responsibility so that a reader can open the parser without reading the job table. Names of functions match the action: parse_line, execute_pipeline, builtin_run, jobs_reap. Errors use the prefix msh: and the system error string when the failure is a system call. The project builds with warnings enabled, including pedantic warnings. The test suite is one command, make test. No network access and no extra packages are required to build or to test.
+The source is C11 and is split by responsibility so that a reader can open the parser without reading the job table. Names of functions match the action: parse_segment, execute_pipeline, builtin_run, jobs_reap. Errors use the prefix msh: and the system error string when the failure is a system call. The project builds with warnings enabled, including pedantic warnings. The test suite is one command, make test. No network access and no extra packages are required to build or to test.
 
 4.3 Users and operating environment
 
@@ -236,15 +236,15 @@ The main loop owns the prompt, the signal disposition of the shell, and the deci
 
 5.2 Data structures
 
-A Command holds a NULL-terminated argv array, an optional input path, an optional output path, and a flag for append. A Pipeline holds up to 32 commands and a background flag. Limits are fixed so the report can state them and the tests can approach them: 128 arguments per command, 32 stages per pipeline, 64 background jobs, and 100 history lines. Hitting a limit prints an error and does not overflow the array.
+A Command holds a NULL-terminated argv array, optional input, output, and error paths, and an append flag for each of standard output and standard error. A Pipeline holds up to 32 commands and a background flag. Limits are fixed so the report can state them and the tests can approach them: 128 arguments per command, 32 stages per pipeline, 64 background jobs, and 100 history lines. Hitting a limit prints an error and does not overflow the array.
 
-The parser allocates each word with malloc. The executor borrows the pipeline for the duration of the command and the main loop frees it afterward. History keeps its own copy of the raw line. A background job keeps its own copy of the raw line, the process-group id, and the pid of each stage, together with a flag that says whether that pid is still alive. When the last pid of a job has been reaped, the job is removed and its status is held so that a later wait can return it. This matters for a script that writes `false &` and then `wait`. The child may exit before wait is parsed. The shell must already have reaped it, or it would be a zombie, and must still remember the status 127.
+The parser allocates each word with malloc. The executor borrows the pipeline for the duration of the command and the main loop frees it afterward. History keeps its own copy of the raw line. A background job keeps its own copy of that segment's command text, the process-group id, and the pid of each stage, together with a flag that says whether that pid is still alive. When the last pid of a job has been reaped, the job is removed and its status is held so that a later wait can return it. This matters for a script that writes `false &` and then `wait`. The child may exit before wait is parsed. The shell must already have reaped it, or it would be a zombie, and must still remember the status 127.
 
 5.3 Parsing
 
 The parser is a single left-to-right scan. Whitespace separates words. A word runs until whitespace or one of the operators |, <, >, and &, except that a single or double quote toggles a quoted region in which those characters are ordinary data. Adjacent quoted and unquoted pieces form one word, so 'a'"b" is the argument ab. An unclosed quote is a syntax error. A # outside quotes starts a comment that runs to the end of the line. A line whose first non-whitespace character is # is ignored by the main loop before parsing, and it is not stored in history.
 
-The operator | finishes the current command and starts the next, provided the current command has a program name. A leading pipe, a trailing pipe, or a doubled pipe is a syntax error ("empty command" or "missing command"). The operator < consumes the next word as the input path. The operator > consumes the next word as the output path, and >> sets the append flag. A second input redirection on the same command, or a second output redirection, is a syntax error. The operator & is legal only as the last token. It sets the background flag on the pipeline.
+The operator | finishes the current command and starts the next stage, provided the current command has a program name. || is a list operator and is recognized before a single |. A leading pipe, a trailing pipe, or an empty stage is a syntax error. < consumes the next word as the input path. > and >> consume the output path. 2> and 2>> consume the standard-error path. 2>&1 is rejected. A second redirection of the same stream on the same command is a syntax error. ;, &&, and || end the pipeline and start another segment. && and || must be followed by another command. A trailing semicolon is allowed. & sets the background flag and may be followed by another segment. The shell parses and runs one segment at a time, so $? in a later segment sees the status so far. A syntax error later on the line does not undo a command that already ran. A skipped && or || segment is parsed and not executed, so it does not change $?.
 
 After the scan, every stage must have at least one argument. A line that is only `> outfile` is rejected. The shell could have created the file, which is what a large shell does, but a missing program name is a more honest error for a project of this size, and it is easy to demonstrate.
 
@@ -252,11 +252,11 @@ Expansion happens on unquoted words only. The word $? is replaced with the decim
 
 5.4 Execution and file descriptors
 
-If the pipeline has one command, that command is a builtin, and the pipeline is not backgrounded, the executor runs the builtin in the shell. Redirection of a builtin is done by duplicating the old standard input or output, dup2-ing the file onto descriptor 0 or 1, running the builtin, flushing stdio, and restoring the saved descriptors. The flush is required because the C library buffers a FILE object. Writing the buffer after the descriptor has been restored would send the builtin’s output to the terminal instead of the file. The same flush is required before a builtin in a child calls _exit, because _exit does not flush stdio. exit of the C library would flush, but it would also run handlers that belong to the shell, so the child flushes and then calls _exit.
+If the pipeline has one command, that command is a builtin, and the pipeline is not backgrounded, the executor runs the builtin in the shell. Redirection of a builtin is done by duplicating the old standard input, output, or error, dup2-ing the file onto descriptor 0, 1, or 2, running the builtin, flushing stdio, and restoring the saved descriptors. The return values of dup and dup2 are checked. The flush is required because the C library buffers a FILE object. Writing the buffer after the descriptor has been restored would send the builtin’s output to the terminal instead of the file. The same flush is required before a builtin in a child calls _exit, because _exit does not flush stdio. exit of the C library would flush, but it would also run handlers that belong to the shell, so the child flushes and then calls _exit.
 
 Every other pipeline is a sequence of forks. The parent creates n-1 pipes for n stages before forking, so every child inherits the pipe descriptors it needs. Child i duplicates the read end of pipe i-1 onto standard input when i is not zero, and the write end of pipe i onto standard output when i is not the last stage. It then closes every pipe descriptor that is not 0 or 1. Closing is the difference between a pipeline that finishes and a pipeline that hangs. The reader of a pipe sees end of file only when every write end is closed. If the shell, or a later stage, kept a write end open, wc would wait forever.
 
-File redirection is applied after the pipe duplication and overrides it for the ends that the syntax attached to a stage. Input redirection is applied to stage 0. Output redirection is applied to the last stage. So `printf 'b\na\n' | sort > out` leaves sort writing to out, not to a pipe. A redirection open that fails prints the path and the system error and the child exits 1. The parent still waits, so the failure becomes the pipeline status.
+File redirection is applied after the pipe duplication and overrides it for every stage, not only the first and the last. So `printf 'x\n' > out | cat` writes x into out and leaves cat reading an empty pipe, and `printf 'b\na\n' | sort > out` leaves sort writing to out. Standard error is redirected the same way with 2> and 2>>. A redirection open that fails prints the path and the system error and the child exits 1. The parent still waits, so the failure becomes the pipeline status.
 
 The child then either runs a builtin and _exits with its status, or calls execvp. A missing program exits 127. A program that exists but cannot be executed exits 126. The parent never treats exec failure as its own errno, because exec failure happens in the child after the fork.
 
@@ -291,7 +291,7 @@ Background pipelines use the same fork and setpgid path and skip tcsetpgrp and t
 
 A child that exits while its parent does not wait becomes a zombie. The main loop calls jobs_reap before each prompt, using waitpid with WNOHANG, and removes jobs whose members have all exited. On a terminal the shell prints a done line to standard error. In a script it stays quiet, because a test's standard output should be the command's output, but it still remembers the status. wait walks any jobs that are still running, blocks in waitpid for each remaining pid, and returns the held status. If nothing is running and nothing has finished since the previous wait, wait returns 0.
 
-jobs prints one line per running job: the job id, the word running, the process-group id, and the original line. The process-group id is the pid a user can pass to the external kill command. msh does not implement a kill builtin.
+jobs prints one line per running job: the job id, the word running, the process-group id, and the command text of that segment. The process-group id is the pid a user can pass to the external kill command. msh does not implement a kill builtin.
 
 5.7 Builtins
 
@@ -337,7 +337,7 @@ The Makefile compiles with -std=c11 -Wall -Wextra -Wpedantic. The binary is ./ms
 
 6.2 Main loop
 
-getline reads an arbitrary line. The trailing newline is stripped, and leading and trailing whitespace is removed. An empty line or a comment returns to the prompt without changing the status. Any other line is copied into the history buffer before parsing, including lines that will turn out to be syntax errors, because the user typed them. parse_line either fills a Pipeline or prints a syntax error and returns failure, in which case the status becomes 2. execute_pipeline returns the status that $? should see. If exit was requested, the loop ends and the process returns that code to its parent. End of file is the same exit path without an explicit exit. The status on end of file is the status of the last command, so a script whose last command is false makes msh itself exit 1.
+getline reads an arbitrary line. The trailing newline is stripped, and leading and trailing whitespace is removed. An empty line or a comment returns to the prompt without changing the status. Any other line is copied into the history buffer before parsing, including lines that will turn out to be syntax errors, because the user typed them. parse_segment either fills one Pipeline or prints a syntax error and returns failure, in which case the status becomes 2. The loop repeats for ;, &&, ||, and &. execute_pipeline returns the status that $? should see. If exit was requested, the loop ends and the process returns that code to its parent. End of file is the same exit path without an explicit exit. The status on end of file is the status of the last command, so a script whose last command is false makes msh itself exit 1.
 
 6.3 Parser details that the tests rely on
 
@@ -373,7 +373,7 @@ The interrupt test is separate because it needs a terminal. Python's pty.fork gi
 
 7.2 Functional results
 
-All 36 functional tests passed, and the interrupt test passed, on the measurement machine after a clean build. Table 5 groups them by the requirement they lock down. Figure 3 is a session captured from the terminal: echo, a two-stage pipeline through sort, and $?. The prompt returns after each command. The same commands are in samples/script.txt for a non-interactive run.
+All 40 functional tests passed, and the interrupt test passed, on the measurement machine after a clean build. Table 5 groups them by the requirement they lock down. Figure 3 is a session captured from the terminal: echo, a two-stage pipeline through sort, and $?. The prompt returns after each command. The same commands are in samples/script.txt for a non-interactive run.
 
 Figure 3. Captured msh session
 
@@ -382,20 +382,22 @@ Figure 3. Captured msh session
 Table 5. Functional coverage
 
 Group                What was checked                                         Tests
-Simple execution     echo, quotes, adjacent quotes, comments, help, history   6
-Directory builtins   pwd, cd, cd -, tilde, missing path, file path,           8
+Simple execution     echo, quotes, adjacent quotes, comments, help, history,  7
+                     quoted $?
+Directory builtins   pwd, cd, cd -, tilde, missing path, file path,           9
                      too many arguments, HOME unset, cd inside a pipeline
-Redirection          create, append, input, empty input, missing input,       5
-                     builtin pwd redirected to a file
+Redirection          create, append, input, empty input, missing input,       7
+                     builtin pwd to a file, stderr, redirect overriding a pipe
 Pipelines            sort, three stages, 31-stage cat chain, output file,     6
                      status of the last stage, builtin pwd flushed through a pipe
-Errors               command not found (127), six syntax forms (status 2),    4
+Lists                &&, ||, ;, short-circuit status, & before another command 2
+Errors               command not found (127), syntax forms (status 2),        4
                      duplicate redirection, bad exit argument
 Process lifetime     exit code, exit of previous status, EOF status,          5
                      background sleep with wait, background command not found
 Interrupt            Ctrl+C kills foreground sleep, background sleep remains  1
 
-The six syntax forms are: a trailing pipe, a leading pipe, a redirection with no target, an unclosed quote, an ampersand followed by another word, and a redirection with no command. Each leaves the shell able to print $? as 2.
+The syntax forms include a trailing pipe, a leading pipe, a redirection with no target, an unclosed quote, a trailing &&, a trailing ||, a redirection with no command, and 2>&1. Each leaves the shell able to print $? as 2.
 
 Representative observed results, copied from a run:
 
@@ -447,7 +449,7 @@ The design choice that matters most is the decision to run simple builtins in th
 
 The second choice is the process group. A shell that only calls signal(SIGINT, SIG_IGN) appears to survive Ctrl+C in casual testing, because the shell ignores the signal, but the children inherit the ignored signal unless they reset it, and a background job in the same group dies or survives together with the foreground job. The terminal test is specific because a weaker test, "the shell printed another prompt", can pass for a broken process-group implementation. Requiring the background sleep to survive is what makes the test about groups rather than about a signal mask.
 
-The third choice is to reject a few convenient syntaxes. Semicolons, &&, and globs would make demonstrations prettier. They would also move work into the parser that the operating-system part of the project does not need. The sample session is still a credible shell session: quotes, a directory change, a pipeline into wc, a missing program, and a syntax error. That is enough to show the system calls.
+List operators are a thin loop around the same pipeline. ; always continues, && continues only after status 0, and || continues only after a non-zero status. A skipped segment is parsed and not executed, so it cannot change $?. Globbing is still left out. The sample session remains a short shell session: quotes, a directory change, a pipeline into wc, a missing program, and a syntax error.
 
 A limitation that should be said plainly in a viva is the ignored SIGTSTP. The shell does not implement suspension. Ctrl+Z does nothing useful. Implementing it correctly means waiting with WUNTRACED, recording a stopped job, and continuing it with SIGCONT under fg. The data structure for a job is already close to what that feature needs. The missing piece is the terminal handover on fg, which is the same tcsetpgrp path the foreground pipeline already uses.
 
@@ -465,7 +467,7 @@ The project meets the objectives in Section 2. The parts that were left out are 
 
 9.2 Future scope
 
-A following version could add fg and bg, with stopped jobs and SIGCONT, reusing the job table. It could add `&&`, `||`, and `;` as list operators around the pipeline type that already exists. It could add globbing with the POSIX glob function on unquoted words, and a separate stderr redirection. None of those changes requires a different process model. A larger change, and a different project, would be to add variables and the if/while constructs Bourne described [2]. That would be a language interpreter whose system-call layer is the shell this report already built.
+A following version could add fg and bg, with stopped jobs and SIGCONT, reusing the job table. It could add globbing with the POSIX glob function on unquoted words. None of those changes requires a different process model. A larger change, and a different project, would be to add variables and the if/while constructs Bourne described [2]. That would be a language interpreter whose system-call layer is the shell this report already built.
 
 References
 
@@ -493,7 +495,7 @@ The course syllabus for Operating Systems (T7998) prescribes Silberschatz, Galvi
 
 Appendix A. Sample session
 
-The transcript in samples/session.txt is the one to attach or to redraw if the printed report needs a figure of the screen. It includes help, a quoted echo, cd to /tmp, cd -, append redirection, a three-stage pipeline, a failing command, an unknown command, and a syntax error. It also includes the background form `[1] running pgid=<pid> sleep 1 &`. Process ids in that file are from one run and will differ on another run.
+The transcript in samples/session.txt is the one to attach or to redraw if the printed report needs a figure of the screen. It includes help, a quoted echo, cd to /tmp, cd -, append redirection, a three-stage pipeline, a failing command, an unknown command, and a syntax error. It also includes the background form `[1] running pgid=<pid> sleep 1`. Process ids in that file are from one run and will differ on another run.
 
 Appendix B. Test catalogue
 
@@ -502,7 +504,7 @@ The executable catalogue is tests/test_shell.py and tests/test_signal.py. Runnin
 Appendix C. Module map for the viva
 
 Question: where is a pipeline created?
-Answer: parse_line in src/parser.c fills a Pipeline. It does not create processes.
+Answer: parse_segment in src/parser.c fills one Pipeline. It does not create processes. The main loop calls it again after ;, &&, ||, or &.
 
 Question: where is a process created?
 Answer: execute_pipeline in src/execute.c calls fork, then execvp in the child.

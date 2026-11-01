@@ -12,12 +12,22 @@
 #define SH_MAX_CMDS 32
 #define SH_MAX_JOBS 64
 
+enum {
+    SH_OP_END = 0,
+    SH_OP_SEMI,
+    SH_OP_AND,
+    SH_OP_OR,
+    SH_OP_BG
+};
+
 typedef struct {
     char *argv[SH_MAX_ARGS];
     int argc;
     char *infile;
     char *outfile;
+    char *errfile;
     int append;
+    int err_append;
 } Command;
 
 typedef struct {

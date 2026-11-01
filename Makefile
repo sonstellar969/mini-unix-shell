@@ -27,7 +27,7 @@ tests/measure_pipe: tests/measure_pipe.c
 pack:
 	rm -f OS_MiniProject_MiniUNIXShell.zip
 	zip -r OS_MiniProject_MiniUNIXShell.zip \
-		Makefile README.md REPORT.md SUBMISSION.md samples src tests report \
+		LICENSE Makefile README.md REPORT.md SUBMISSION.md samples src tests report \
 		-x 'src/*.o' 'msh' 'tests/measure_pipe' '*/.DS_Store'
 
 clean:

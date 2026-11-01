@@ -28,8 +28,9 @@ msh, a minimal UNIX shell
 Builtins: cd, pwd, exit, help, history, jobs, wait
 External commands run with fork and execvp.
 Pipelines: cmd1 | cmd2 | cmd3
-Redirection: < file, > file, >> file
-Background: command &
+Redirection: < file, > file, >> file, 2> file, 2>> file
+Lists: cmd1 ; cmd2, cmd1 && cmd2, cmd1 || cmd2
+Background: command &   (more commands may follow)
 Status of the previous command: $?
 Home shortcut: ~ and ~/
 Ctrl+C stops the foreground command and returns to msh.
@@ -70,7 +71,7 @@ Observed:
 [1] 9426
 
 # stdout
-[1] running pgid=9426 sleep 1 &
+[1] running pgid=9426 sleep 1
 waited
 
 The process id is chosen by the kernel and changes every run. `wait` returns when the sleep exits. The shell's own status after a successful `wait` is the job's status (0 here).
@@ -83,7 +84,10 @@ Invalid and boundary cases covered by tests/test_shell.py:
 - duplicate output redirection
 - redirection with no target
 - unclosed quote
-- '&' not at the end of the line
+- a trailing `&&` or `||`
+- `2>&1`, which is rejected
+- a redirect on a middle pipeline stage, which overrides that stage's pipe
+- `2>` and `2>>`
 - a command that is only `> outfile`
 - empty input file
 - missing input file

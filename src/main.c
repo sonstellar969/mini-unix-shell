@@ -64,6 +64,24 @@ static void trim(char *s) {
     }
 }
 
+static char *segment_text(const char *line, size_t begin, size_t end) {
+    while (begin < end && isspace((unsigned char)line[begin])) {
+        begin++;
+    }
+    while (end > begin && isspace((unsigned char)line[end - 1])) {
+        end--;
+    }
+    size_t n = end - begin;
+    char *copy = malloc(n + 1);
+    if (!copy) {
+        fprintf(stderr, "msh: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+    memcpy(copy, line + begin, n);
+    copy[n] = '\0';
+    return copy;
+}
+
 static void print_prompt(void) {
     char cwd[4096];
     const char *shown = cwd;
@@ -112,13 +130,38 @@ int main(void) {
         }
 
         history_add(line);
-        Pipeline pipeline;
-        if (parse_line(line, &pipeline) != 0) {
-            sh_last_status = 2;
-            continue;
+        size_t pos = 0;
+        int run = 1;
+        while (!sh_exit_requested) {
+            size_t begin = pos;
+            size_t cut = pos;
+            Pipeline pipeline;
+            int op = SH_OP_END;
+            int rc = parse_segment(line, &pos, &pipeline, &op, &cut);
+            if (rc < 0) {
+                sh_last_status = 2;
+                break;
+            }
+            if (rc > 0) {
+                break;
+            }
+            if (run) {
+                char *text = segment_text(line, begin, cut);
+                sh_last_status = execute_pipeline(&pipeline, text);
+                free(text);
+            }
+            pipeline_free(&pipeline);
+            if (sh_exit_requested || op == SH_OP_END) {
+                break;
+            }
+            if (op == SH_OP_AND) {
+                run = sh_last_status == 0;
+            } else if (op == SH_OP_OR) {
+                run = sh_last_status != 0;
+            } else {
+                run = 1;
+            }
         }
-        sh_last_status = execute_pipeline(&pipeline, line);
-        pipeline_free(&pipeline);
     }
 
     free(line);

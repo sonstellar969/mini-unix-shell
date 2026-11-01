@@ -34,8 +34,9 @@ static int builtin_help(void) {
         "Builtins: cd, pwd, exit, help, history, jobs, wait\n"
         "External commands run with fork and execvp.\n"
         "Pipelines: cmd1 | cmd2 | cmd3\n"
-        "Redirection: < file, > file, >> file\n"
-        "Background: command &\n"
+        "Redirection: < file, > file, >> file, 2> file, 2>> file\n"
+        "Lists: cmd1 ; cmd2, cmd1 && cmd2, cmd1 || cmd2\n"
+        "Background: command &   (more commands may follow)\n"
         "Status of the previous command: $?\n"
         "Home shortcut: ~ and ~/\n"
         "Ctrl+C stops the foreground command and returns to msh.\n",

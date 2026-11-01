@@ -39,41 +39,65 @@ static int open_output(const char *path, int append) {
 
 static void restore_fd(int saved, int target) {
     if (saved >= 0) {
-        dup2(saved, target);
+        if (dup2(saved, target) < 0) {
+            fprintf(stderr, "msh: dup2: %s\n", strerror(errno));
+        }
         close(saved);
     }
 }
 
-static int apply_redirs(const Command *cmd, int *saved_in, int *saved_out) {
+/* Install fd onto target. If open() returned target itself, leave it there. */
+static int move_fd(int fd, int target) {
+    if (fd == target) {
+        return 0;
+    }
+    if (dup2(fd, target) < 0) {
+        fprintf(stderr, "msh: dup2: %s\n", strerror(errno));
+        close(fd);
+        return -1;
+    }
+    close(fd);
+    return 0;
+}
+
+static int redirect_one(const char *path, int input, int append, int target, int *saved) {
+    int fd = input ? open_input(path) : open_output(path, append);
+    if (fd < 0) {
+        return -1;
+    }
+    int copy = dup(target);
+    if (copy < 0) {
+        fprintf(stderr, "msh: dup: %s\n", strerror(errno));
+        close(fd);
+        return -1;
+    }
+    if (move_fd(fd, target) < 0) {
+        restore_fd(copy, target);
+        return -1;
+    }
+    *saved = copy;
+    return 0;
+}
+
+static int apply_redirs(const Command *cmd, int *saved_in, int *saved_out, int *saved_err) {
     *saved_in = -1;
     *saved_out = -1;
-    if (cmd->infile) {
-        int fd = open_input(cmd->infile);
-        if (fd < 0) {
-            return -1;
-        }
-        *saved_in = dup(STDIN_FILENO);
-        if (dup2(fd, STDIN_FILENO) < 0) {
-            close(fd);
-            return -1;
-        }
-        close(fd);
+    *saved_err = -1;
+    if (cmd->infile && redirect_one(cmd->infile, 1, 0, STDIN_FILENO, saved_in) != 0) {
+        return -1;
     }
-    if (cmd->outfile) {
-        int fd = open_output(cmd->outfile, cmd->append);
-        if (fd < 0) {
-            restore_fd(*saved_in, STDIN_FILENO);
-            *saved_in = -1;
-            return -1;
-        }
-        *saved_out = dup(STDOUT_FILENO);
-        if (dup2(fd, STDOUT_FILENO) < 0) {
-            close(fd);
-            restore_fd(*saved_in, STDIN_FILENO);
-            *saved_in = -1;
-            return -1;
-        }
-        close(fd);
+    if (cmd->outfile && redirect_one(cmd->outfile, 0, cmd->append, STDOUT_FILENO, saved_out) != 0) {
+        restore_fd(*saved_in, STDIN_FILENO);
+        *saved_in = -1;
+        return -1;
+    }
+    if (cmd->errfile &&
+        redirect_one(cmd->errfile, 0, cmd->err_append, STDERR_FILENO, saved_err) != 0) {
+        restore_fd(*saved_out, STDOUT_FILENO);
+        restore_fd(*saved_in, STDIN_FILENO);
+        *saved_out = -1;
+        *saved_in = -1;
+        return -1;
     }
     return 0;
 }
@@ -81,14 +105,18 @@ static int apply_redirs(const Command *cmd, int *saved_in, int *saved_out) {
 static int run_parent_builtin(Command *cmd) {
     int saved_in;
     int saved_out;
+    int saved_err;
     fflush(stdout);
     fflush(stderr);
-    if (apply_redirs(cmd, &saved_in, &saved_out) != 0) {
+    if (apply_redirs(cmd, &saved_in, &saved_out, &saved_err) != 0) {
         return 1;
     }
     int status = builtin_run(cmd);
+    fflush(stdout);
+    fflush(stderr);
     restore_fd(saved_in, STDIN_FILENO);
     restore_fd(saved_out, STDOUT_FILENO);
+    restore_fd(saved_err, STDERR_FILENO);
     return status;
 }
 
@@ -139,21 +167,25 @@ static void run_child(Pipeline *pipeline, int index, int *pipefds) {
         }
     }
 
-    if (index == 0 && cmd->infile) {
+    /* File redirections override the pipe ends for this stage, including
+     * a stage that is neither first nor last. */
+    if (cmd->infile) {
         int fd = open_input(cmd->infile);
-        if (fd < 0) {
+        if (fd < 0 || move_fd(fd, STDIN_FILENO) < 0) {
             _exit(1);
         }
-        dup2(fd, STDIN_FILENO);
-        close(fd);
     }
-    if (index == ncmds - 1 && cmd->outfile) {
+    if (cmd->outfile) {
         int fd = open_output(cmd->outfile, cmd->append);
-        if (fd < 0) {
+        if (fd < 0 || move_fd(fd, STDOUT_FILENO) < 0) {
             _exit(1);
         }
-        dup2(fd, STDOUT_FILENO);
-        close(fd);
+    }
+    if (cmd->errfile) {
+        int fd = open_output(cmd->errfile, cmd->err_append);
+        if (fd < 0 || move_fd(fd, STDERR_FILENO) < 0) {
+            _exit(1);
+        }
     }
 
     if (builtin_is(cmd->argv[0])) {

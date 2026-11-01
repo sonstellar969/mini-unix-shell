@@ -57,7 +57,7 @@ def main():
 
         os.write(fd, b"jobs\n")
         listed = read_until(fd, b"running", 3)
-        if b"running" not in listed or b"sleep 30 &" not in listed:
+        if b"running" not in listed or b"sleep 30" not in listed:
             raise SystemExit(f"background job was killed with the foreground\n{listed!r}")
 
         match = re.search(br"pgid=(\d+)", listed)
